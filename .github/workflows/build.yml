@@ -1,0 +1,161 @@
+name: Build all platforms
+
+# Builds Lumen for every platform on GitHub-hosted runners and uploads a
+# downloadable artifact per OS. Runs on each push to main/master, on tags, and
+# can be triggered manually from the Actions tab (Run workflow).
+on:
+  push:
+    branches: [main, master]
+    tags: ['v*']
+  workflow_dispatch:
+
+# Needed so the release job can publish/update the "latest" release.
+permissions:
+  contents: write
+
+env:
+  FLUTTER_VERSION: 3.38.9 # matches local dev SDK (Dart 3.10.x)
+
+jobs:
+  android:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+      - uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          flutter-version: ${{ env.FLUTTER_VERSION }}
+          cache: true
+      - run: flutter pub get
+      - run: flutter build apk --release --build-number=${{ github.run_number }} --dart-define=APP_BUILD=${{ github.run_number }}
+      - uses: actions/upload-artifact@v4
+        with:
+          name: Lumen-Android-apk
+          path: build/app/outputs/flutter-apk/app-release.apk
+          if-no-files-found: error
+
+  windows:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          flutter-version: ${{ env.FLUTTER_VERSION }}
+          cache: true
+      - run: flutter config --enable-windows-desktop
+      - run: flutter pub get
+      - run: flutter build windows --release --dart-define=APP_BUILD=${{ github.run_number }}
+      - name: Package portable zip
+        run: Compress-Archive -Path build/windows/x64/runner/Release/* -DestinationPath Lumen-Windows.zip
+      - uses: actions/upload-artifact@v4
+        with:
+          name: Lumen-Windows
+          path: Lumen-Windows.zip
+          if-no-files-found: error
+
+  macos:
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          flutter-version: ${{ env.FLUTTER_VERSION }}
+          cache: true
+      - run: flutter config --enable-macos-desktop
+      - run: flutter pub get
+      - run: flutter build macos --release --dart-define=APP_BUILD=${{ github.run_number }}
+      - name: Zip .app
+        run: ditto -c -k --sequesterRsrc --keepParent build/macos/Build/Products/Release/lumen_tv.app Lumen-macOS.zip
+      - uses: actions/upload-artifact@v4
+        with:
+          name: Lumen-macOS
+          path: Lumen-macOS.zip
+          if-no-files-found: error
+
+  linux:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install Linux build deps
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y ninja-build libgtk-3-dev clang cmake pkg-config libmpv-dev mpv libsecret-1-dev libjsoncpp-dev
+      - uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          flutter-version: ${{ env.FLUTTER_VERSION }}
+          cache: true
+      - run: flutter config --enable-linux-desktop
+      - run: flutter pub get
+      - run: flutter build linux --release --dart-define=APP_BUILD=${{ github.run_number }}
+      - name: Package tarball
+        run: tar -czf Lumen-Linux-x64.tar.gz -C build/linux/x64/release/bundle .
+      - uses: actions/upload-artifact@v4
+        with:
+          name: Lumen-Linux
+          path: Lumen-Linux-x64.tar.gz
+          if-no-files-found: error
+
+  ios:
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          flutter-version: ${{ env.FLUTTER_VERSION }}
+          cache: true
+      - run: flutter pub get
+      # Unsigned build (CI has no signing certs). Produces Runner.app that must
+      # be re-signed / sideloaded (e.g. with AltStore or Sideloadly) to install.
+      - run: flutter build ios --release --no-codesign --dart-define=APP_BUILD=${{ github.run_number }}
+      - name: Zip unsigned .app
+        run: ditto -c -k --sequesterRsrc --keepParent build/ios/iphoneos/Runner.app Lumen-iOS-unsigned.zip
+      - uses: actions/upload-artifact@v4
+        with:
+          name: Lumen-iOS-unsigned
+          path: Lumen-iOS-unsigned.zip
+          if-no-files-found: error
+
+  # Collect every platform build and publish them to a rolling "latest" GitHub
+  # Release, so the README can offer stable one-click download links.
+  release:
+    needs: [android, windows, macos, linux, ios]
+    # Publish whatever built successfully, even if some platform job failed.
+    if: ${{ always() }}
+    runs-on: ubuntu-latest
+    steps:
+      - name: Download all build artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: dist
+      - name: Stage release assets (stable names)
+        run: |
+          mkdir -p out
+          cp dist/Lumen-Android-apk/app-release.apk out/Lumen-Android.apk || echo "skip android"
+          cp dist/Lumen-Windows/Lumen-Windows.zip out/Lumen-Windows.zip || echo "skip windows"
+          cp dist/Lumen-macOS/Lumen-macOS.zip out/Lumen-macOS.zip || echo "skip macos"
+          cp dist/Lumen-Linux/Lumen-Linux-x64.tar.gz out/Lumen-Linux-x64.tar.gz || echo "skip linux"
+          cp dist/Lumen-iOS-unsigned/Lumen-iOS-unsigned.zip out/Lumen-iOS-unsigned.zip || echo "skip ios"
+          ls -la out
+      - name: Publish to "latest" release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: latest
+          name: Build ${{ github.run_number }}
+          # The app reads this 'build:' line to detect newer builds for in-app update.
+          body: |
+            build: ${{ github.run_number }}
+
+            Lumen automatic build. Install links are below.
+            On Android the app can update itself from here.
+          # Must NOT be a prerelease, or the /releases/latest/ download URLs 404.
+          prerelease: false
+          make_latest: true
+          files: out/*
