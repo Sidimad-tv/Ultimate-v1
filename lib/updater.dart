@@ -29,7 +29,7 @@ class Updater {
   Updater._();
   static final Updater instance = Updater._();
 
-  static const _releaseApi = 'https://api.github.com/repos/Talha-Ashraf420/Lumen-App/releases/latest';
+  static const _releaseApi = 'https://api.github.com/repos/Sidimad-tv/Ultimate-v1/releases/latest';
 
   String get currentLabel => kBuildNumber == 0 ? 'dev build' : 'Build $kBuildNumber';
 
@@ -39,7 +39,7 @@ class Updater {
   Future<UpdateInfo?> check() async {
     try {
       final res = await http
-          .get(Uri.parse(_releaseApi), headers: {'Accept': 'application/vnd.github+json', 'User-Agent': 'Lumen'})
+          .get(Uri.parse(_releaseApi), headers: {'Accept': 'application/vnd.github+json', 'User-Agent': 'Sidimad-XtreamProv1'})
           .timeout(const Duration(seconds: 15));
       if (res.statusCode != 200) return null;
       final j = jsonDecode(res.body) as Map<String, dynamic>;
@@ -50,14 +50,14 @@ class Updater {
 
       String? apk;
       for (final a in (j['assets'] as List? ?? const [])) {
-        if ((a['name'] ?? '') == 'Lumen-Android.apk') apk = a['browser_download_url'];
+        if ((a['name'] ?? '') == 'Sidimad-XtreamProv1-Android.apk') apk = a['browser_download_url'];
       }
       return UpdateInfo(
         build: latest,
         name: name.isEmpty ? 'Build $latest' : name,
         notes: body.replaceFirst(RegExp(r'build:\s*\d+\s*'), '').trim(),
         apkUrl: apk,
-        releaseUrl: (j['html_url'] ?? 'https://github.com/Talha-Ashraf420/Lumen-App/releases/latest').toString(),
+        releaseUrl: (j['html_url'] ?? 'https://github.com/Sidimad-tv/Ultimate-v1/releases/latest').toString(),
       );
     } catch (_) {
       return null;
