@@ -129,19 +129,20 @@ class _HomeShellState extends State<HomeShell> with WidgetsBindingObserver {
 
   // ---- mobile: floating bottom nav ----
   Widget _mobileLayout(List<Widget> pages) {
+    final bottomPad = MediaQuery.of(context).padding.bottom;
     return Stack(
       children: [
         SafeArea(bottom: false, child: IndexedStack(index: _index, children: pages)),
         Align(
           alignment: Alignment.bottomCenter,
           child: Padding(
-            padding: const EdgeInsets.fromLTRB(16, 0, 16, 22),
+            padding: EdgeInsets.only(bottom: bottomPad),
             child: Glass(
-              radius: 30,
+              radius: 0,
               blur: 26,
-              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 9),
+              padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 8),
               child: Row(
-                mainAxisSize: MainAxisSize.min,
+                mainAxisAlignment: MainAxisAlignment.spaceAround,
                 children: [for (var i = 0; i < _nav.length; i++) _item(i)],
               ),
             ),
@@ -159,19 +160,24 @@ class _HomeShellState extends State<HomeShell> with WidgetsBindingObserver {
       child: AnimatedContainer(
         duration: const Duration(milliseconds: 280),
         curve: Curves.easeOut,
-        margin: const EdgeInsets.symmetric(horizontal: 2),
-        padding: EdgeInsets.symmetric(horizontal: sel ? 14 : 11, vertical: 11),
+        padding: EdgeInsets.symmetric(horizontal: sel ? 18 : 14, vertical: 14),
         decoration: BoxDecoration(
           color: sel ? accent : null,
-          borderRadius: BorderRadius.circular(18),
+          borderRadius: BorderRadius.circular(20),
         ),
-        child: Row(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
           children: [
-            Icon(_nav[i].icon, size: 21, color: sel ? Colors.white : muted),
-            if (sel) ...[
-              const SizedBox(width: 7),
-              Text(_nav[i].label, style: const TextStyle(fontWeight: FontWeight.w700, color: Colors.white, fontSize: 13)),
-            ],
+            Icon(_nav[i].icon, size: 26, color: sel ? Colors.white : muted),
+            const SizedBox(height: 3),
+            Text(
+              _nav[i].label,
+              style: TextStyle(
+                fontWeight: sel ? FontWeight.w700 : FontWeight.w500,
+                color: sel ? Colors.white : muted,
+                fontSize: 11,
+              ),
+            ),
           ],
         ),
       ),

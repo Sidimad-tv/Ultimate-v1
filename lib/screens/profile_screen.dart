@@ -59,6 +59,39 @@ class _ProfileScreenState extends State<ProfileScreen> {
     widget.onSwitch(p);
   }
 
+  void _showPlaylistPicker() {
+    final others = _profiles.where((p) => !_isActive(p)).toList();
+    if (others.isEmpty) return;
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: surface,
+      shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(24))),
+      builder: (ctx) => SafeArea(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const SizedBox(height: 12),
+            Container(width: 40, height: 4, decoration: BoxDecoration(color: line, borderRadius: BorderRadius.circular(2))),
+            const SizedBox(height: 16),
+            Text('Switch playlist', style: TextStyle(fontWeight: FontWeight.w700, fontSize: 16, color: textHi)),
+            const SizedBox(height: 12),
+            for (final p in others) ...[
+              ListTile(
+                leading: Icon(Icons.playlist_play_rounded, color: accent, size: 24),
+                title: Text(p.username, style: TextStyle(color: textHi, fontWeight: FontWeight.w600)),
+                subtitle: Text(p.baseUrl.replaceFirst(RegExp(r'^https?://'), ''),
+                    maxLines: 1, overflow: TextOverflow.ellipsis, style: TextStyle(color: muted, fontSize: 12)),
+                onTap: () { Navigator.pop(ctx); _switch(p); },
+              ),
+              if (p != others.last) Divider(height: 1, color: line),
+            ],
+            const SizedBox(height: 16),
+          ],
+        ),
+      ),
+    );
+  }
+
   Future<void> _delete(XtreamCredentials p) async {
     final left = await Store.removeProfile(p);
     if (mounted) setState(() => _profiles = left);
@@ -154,37 +187,22 @@ class _ProfileScreenState extends State<ProfileScreen> {
         if (_profiles.length > 1)
           Padding(
             padding: const EdgeInsets.fromLTRB(4, 0, 4, 10),
-            child: Glass(
-              radius: 18,
-              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 4),
-              child: Row(
-                children: [
-                  Icon(Icons.swap_horiz_rounded, color: accent, size: 20),
-                  const SizedBox(width: 10),
-                  Expanded(
-                    child: DropdownButtonHideUnderline(
-                      child: DropdownButton<XtreamCredentials>(
-                        isExpanded: true,
-                        value: null,
-                        hint: Text('Switch playlist (${_profiles.length} saved)',
-                            style: TextStyle(color: muted, fontSize: 13)),
-                        dropdownColor: surface,
-                        style: TextStyle(color: textHi, fontSize: 13),
-                        items: _profiles.where((p) => !_isActive(p)).map((p) {
-                          final host = p.baseUrl.replaceFirst(RegExp(r'^https?://'), '');
-                          return DropdownMenuItem<XtreamCredentials>(
-                            value: p,
-                            child: Text('${p.username}  ($host)',
-                                maxLines: 1, overflow: TextOverflow.ellipsis),
-                          );
-                        }).toList(),
-                        onChanged: (p) {
-                          if (p != null) _switch(p);
-                        },
-                      ),
+            child: GestureDetector(
+              onTap: () => _showPlaylistPicker(),
+              child: Glass(
+                radius: 18,
+                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+                child: Row(
+                  children: [
+                    Icon(Icons.swap_horiz_rounded, color: accent, size: 22),
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: Text('Switch playlist (${_profiles.length} saved)',
+                          style: TextStyle(color: textHi, fontSize: 14, fontWeight: FontWeight.w500)),
                     ),
-                  ),
-                ],
+                    Icon(Icons.keyboard_arrow_down_rounded, color: muted, size: 22),
+                  ],
+                ),
               ),
             ),
           ),

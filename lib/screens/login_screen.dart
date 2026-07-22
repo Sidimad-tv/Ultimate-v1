@@ -205,49 +205,37 @@ class _LoginScreenState extends State<LoginScreen> {
                         textAlign: TextAlign.center, style: TextStyle(color: muted)),
                     const SizedBox(height: 24),
                     if (_profiles.isNotEmpty) ...[
-                      Container(
-                        width: double.infinity,
-                        padding: const EdgeInsets.symmetric(horizontal: 14),
-                        decoration: BoxDecoration(
-                          color: surface,
-                          borderRadius: BorderRadius.circular(14),
-                          border: Border.all(color: line),
-                        ),
-                        child: Row(
-                          children: [
-                            Icon(Icons.playlist_play_rounded, color: accent, size: 22),
-                            const SizedBox(width: 10),
-                            Expanded(
-                              child: DropdownButtonHideUnderline(
-                                child: DropdownButton<XtreamCredentials>(
-                                  isExpanded: true,
-                                  value: _selectedProfile,
-                                  hint: Text(
-                                    'Saved Playlists (${_profiles.length})',
-                                    style: TextStyle(color: muted, fontSize: 14),
+                      GestureDetector(
+                        onTap: _busy ? null : () => _showPlaylistPicker(),
+                        child: Container(
+                          width: double.infinity,
+                          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 16),
+                          decoration: BoxDecoration(
+                            color: surface,
+                            borderRadius: BorderRadius.circular(14),
+                            border: Border.all(color: line),
+                          ),
+                          child: Row(
+                            children: [
+                              Icon(Icons.playlist_play_rounded, color: accent, size: 24),
+                              const SizedBox(width: 12),
+                              Expanded(
+                                child: Text(
+                                  _selectedProfile != null
+                                      ? _profileLabel(_selectedProfile!)
+                                      : 'Saved Playlists (${_profiles.length})',
+                                  style: TextStyle(
+                                    color: _selectedProfile != null ? textHi : muted,
+                                    fontSize: 14,
+                                    fontWeight: _selectedProfile != null ? FontWeight.w600 : FontWeight.w400,
                                   ),
-                                  dropdownColor: surface,
-                                  style: TextStyle(color: textHi, fontSize: 13),
-                                  items: _profiles.map((p) {
-                                    return DropdownMenuItem<XtreamCredentials>(
-                                      value: p,
-                                      child: Text(
-                                        _profileLabel(p),
-                                        maxLines: 1,
-                                        overflow: TextOverflow.ellipsis,
-                                      ),
-                                    );
-                                  }).toList(),
-                                  onChanged: _busy
-                                      ? null
-                                      : (p) {
-                                          setState(() => _selectedProfile = p);
-                                          if (p != null) _connect(p);
-                                        },
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
                                 ),
                               ),
-                            ),
-                          ],
+                              Icon(Icons.keyboard_arrow_down_rounded, color: muted, size: 22),
+                            ],
+                          ),
                         ),
                       ),
                       const SizedBox(height: 8),
@@ -365,6 +353,47 @@ class _LoginScreenState extends State<LoginScreen> {
     final host = p.baseUrl.replaceFirst(RegExp(r'^https?://'), '');
     final type = p.isM3u ? 'M3U' : 'Xtream';
     return '${p.username}  ($host)  [$type]';
+  }
+
+  void _showPlaylistPicker() {
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: surface,
+      shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(24))),
+      builder: (ctx) => SafeArea(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const SizedBox(height: 12),
+            Container(width: 40, height: 4, decoration: BoxDecoration(color: line, borderRadius: BorderRadius.circular(2))),
+            const SizedBox(height: 16),
+            Text('Saved Playlists', style: TextStyle(fontWeight: FontWeight.w700, fontSize: 16, color: textHi)),
+            const SizedBox(height: 12),
+            for (final p in _profiles) ...[
+              ListTile(
+                leading: Icon(
+                  _selectedProfile == p ? Icons.radio_button_checked : Icons.radio_button_unchecked,
+                  color: _selectedProfile == p ? accent : muted,
+                  size: 22,
+                ),
+                title: Text(p.username, style: TextStyle(color: textHi, fontWeight: FontWeight.w600, fontSize: 15)),
+                subtitle: Text(
+                  '${p.baseUrl.replaceFirst(RegExp(r'^https?://'), '')}  [${p.isM3u ? 'M3U' : 'Xtream'}]',
+                  maxLines: 1, overflow: TextOverflow.ellipsis, style: TextStyle(color: muted, fontSize: 12),
+                ),
+                onTap: () {
+                  Navigator.pop(ctx);
+                  setState(() => _selectedProfile = p);
+                  _connect(p);
+                },
+              ),
+              if (p != _profiles.last) Divider(height: 1, color: line),
+            ],
+            const SizedBox(height: 16),
+          ],
+        ),
+      ),
+    );
   }
 
   Widget _blob(Color color, double size) => Container(

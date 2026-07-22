@@ -1,9 +1,11 @@
+import 'dart:io';
 import 'package:flutter/material.dart';
+import 'package:url_launcher/url_launcher.dart';
 import '../theme.dart';
 import '../updater.dart';
 
 /// Shows the "Update available" dialog and runs the right install path per
-/// platform (Android = download+install in-app; others = open release page).
+/// platform (Android = APK install, Windows = silent zip replace, others = link).
 Future<void> showUpdateFlow(BuildContext context, UpdateInfo info) async {
   await showDialog<void>(
     context: context,
@@ -22,23 +24,42 @@ class _UpdateDialogState extends State<_UpdateDialog> {
   bool _busy = false;
   double _progress = 0;
   String? _error;
+  String _statusText = '';
 
   Future<void> _run() async {
     final info = widget.info;
     setState(() {
       _busy = true;
       _error = null;
+      _statusText = 'Preparing…';
     });
     try {
-      if (Updater.instance.canSelfInstall && info.apkUrl != null) {
-        await Updater.instance.downloadAndInstall(info, onProgress: (p) => setState(() => _progress = p));
+      if (Platform.isAndroid && info.apkUrl != null) {
+        setState(() => _statusText = 'Downloading APK…');
+        await Updater.instance.downloadAndInstallApk(info, onProgress: (p) {
+          if (mounted) setState(() {
+            _progress = p;
+            _statusText = 'Downloading APK… ${(p * 100).round()}%';
+          });
+        });
+        if (mounted) Navigator.of(context).pop();
+      } else if (Platform.isWindows && info.windowsZipUrl != null) {
+        setState(() => _statusText = 'Downloading update…');
+        await Updater.instance.downloadAndInstallWindows(info, onProgress: (p) {
+          if (mounted) setState(() {
+            _progress = p;
+            _statusText = 'Downloading update… ${(p * 100).round()}%';
+          });
+        });
         if (mounted) Navigator.of(context).pop();
       } else {
-        await Updater.instance.openReleasePage(info);
+        // Fallback: open release page
+        setState(() => _statusText = 'Opening download page…');
+        await launchUrl(Uri.parse(info.releaseUrl), mode: LaunchMode.externalApplication);
         if (mounted) Navigator.of(context).pop();
       }
     } catch (e) {
-      setState(() {
+      if (mounted) setState(() {
         _busy = false;
         _error = 'Update failed: $e';
       });
@@ -48,7 +69,8 @@ class _UpdateDialogState extends State<_UpdateDialog> {
   @override
   Widget build(BuildContext context) {
     final info = widget.info;
-    final canInstall = Updater.instance.canSelfInstall && info.apkUrl != null;
+    final canInstall = Updater.instance.canSelfInstall &&
+        ((Platform.isAndroid && info.apkUrl != null) || (Platform.isWindows && info.windowsZipUrl != null));
     return AlertDialog(
       backgroundColor: surface,
       title: Row(children: [
@@ -72,19 +94,19 @@ class _UpdateDialogState extends State<_UpdateDialog> {
             const SizedBox(height: 10),
             Text('This opens the release page to download the new build.', style: TextStyle(color: subtle, fontSize: 12)),
           ],
-          if (_busy && canInstall) ...[
+          if (_busy) ...[
             const SizedBox(height: 16),
             ClipRRect(
               borderRadius: BorderRadius.circular(3),
               child: LinearProgressIndicator(
                 value: _progress > 0 ? _progress : null,
-                minHeight: 5,
+                minHeight: 6,
                 backgroundColor: surfaceHi,
                 valueColor: AlwaysStoppedAnimation(accent),
               ),
             ),
-            const SizedBox(height: 6),
-            Text(_progress > 0 ? 'Downloading ${(_progress * 100).round()}%' : 'Starting…', style: TextStyle(color: subtle, fontSize: 12)),
+            const SizedBox(height: 8),
+            Text(_statusText, style: TextStyle(color: subtle, fontSize: 12)),
           ],
           if (_error != null) ...[
             const SizedBox(height: 12),
