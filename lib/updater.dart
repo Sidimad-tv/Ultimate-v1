@@ -7,7 +7,6 @@ import 'package:path_provider/path_provider.dart';
 import 'package:path/path.dart' as p;
 
 /// Monotonic build number, injected by CI (`--dart-define=APP_BUILD=<run>`).
-/// 0 in local dev builds (we never prompt to "update" a dev build).
 const int kBuildNumber = int.fromEnvironment('APP_BUILD', defaultValue: 0);
 
 class UpdateInfo {
@@ -21,9 +20,6 @@ class UpdateInfo {
 }
 
 /// Self-update against the project's rolling GitHub "latest" release.
-///  • Android → downloads APK, launches system installer.
-///  • Windows → downloads zip, extracts, replaces files, relaunches silently.
-///  • Other → opens release page.
 class Updater {
   Updater._();
   static final Updater instance = Updater._();
@@ -34,7 +30,8 @@ class Updater {
 
   bool get canSelfInstall => !kIsWeb && (Platform.isAndroid || Platform.isWindows);
 
-  /// Returns update info if a newer build is published, else null.
+  // ── Check for update ──────────────────────────────────────────────────────
+
   Future<UpdateInfo?> check() async {
     try {
       final res = await http
@@ -72,7 +69,8 @@ class Updater {
     return m == null ? null : int.tryParse(m.group(1)!);
   }
 
-  /// Android: download APK with progress (0..1) then open installer.
+  // ── Android ───────────────────────────────────────────────────────────────
+
   Future<void> downloadAndInstallApk(UpdateInfo info, {void Function(double)? onProgress}) async {
     if (info.apkUrl == null) throw Exception('No Android build available.');
     final dir = await getTemporaryDirectory();
@@ -82,55 +80,93 @@ class Updater {
     if (r.type != ResultType.done) throw Exception(r.message);
   }
 
-  /// Windows: download zip with progress, extract, replace files, relaunch.
-  Future<void> downloadAndInstallWindows(UpdateInfo info, {void Function(double)? onProgress}) async {
+  // ── Windows: download + extract ───────────────────────────────────────────
+  // Returns the extract directory path. Call [applyWindowsUpdate] to relaunch.
+
+  Future<String> prepareWindowsUpdate(UpdateInfo info, {void Function(double)? onProgress}) async {
     if (info.windowsZipUrl == null) throw Exception('No Windows build available.');
     final dir = await getTemporaryDirectory();
     final zipFile = File('${dir.path}/sidimad-update-${info.build}.zip');
     final extractDir = Directory('${dir.path}/sidimad-extract-${info.build}');
 
-    // 1. Download zip with progress
+    // Download zip with progress
     await _downloadFile(info.windowsZipUrl!, zipFile, onProgress);
 
-    // 2. Extract zip using PowerShell
+    // Extract
     if (extractDir.existsSync()) extractDir.deleteSync(recursive: true);
-    extractDir.createSync();
-    final psExtract = await Process.run('powershell', [
+    extractDir.createSync(recursive: true);
+    final ps = await Process.run('powershell', [
       '-NoProfile', '-Command',
       'Expand-Archive -Path "${zipFile.path}" -DestinationPath "${extractDir.path}" -Force',
     ]);
-    if (psExtract.exitCode != 0) throw Exception('Failed to extract update: ${psExtract.stderr}');
+    if (ps.exitCode != 0) throw Exception('Extract failed: ${ps.stderr}');
 
-    // 3. Find the exe directory (where the running app lives)
+    return extractDir.path;
+  }
+
+  // ── Windows: apply update (restart now) ───────────────────────────────────
+  // Writes a helper bat, launches it, exits the current process.
+
+  Future<void> applyWindowsUpdate(String extractDirPath) async {
     final exePath = Platform.resolvedExecutable;
-    final appDir = Directory(p.dirname(exePath));
+    final appDir = p.dirname(exePath);
+    final exeName = p.basename(exePath);
 
-    // 4. Copy all extracted files over the current installation
-    await _copyDirectory(extractDir, appDir);
+    final dir = await getTemporaryDirectory();
+    final batFile = File('${dir.path}/sidimad-restart.bat');
 
-    // 5. Launch new exe
-    await Process.start(exePath, [], mode: ProcessStartMode.detached);
-
-    // 6. Kill this process
+    // The bat: waits for process exit, copies files, relaunches exe, deletes itself
+    final batContent = '''@echo off
+timeout /t 3 /nobreak >nul
+xcopy /Y /E /I /Q "${extractDirPath}\\*" "${appDir}\\"
+start "" "${appDir}\\${exeName}"
+del "%~f0"
+''';
+    await batFile.writeAsString(batContent);
+    await Process.start('cmd', ['/c', batFile.path], mode: ProcessStartMode.detached);
     exit(0);
   }
 
-  /// Recursively copy [src] into [dst], overwriting existing files.
-  Future<void> _copyDirectory(Directory src, Directory dst) async {
-    dst.createSync(recursive: true);
-    await for (final entity in src.list(recursive: true)) {
-      final rel = p.relative(entity.path, from: src.path);
-      final target = File('${dst.path}/$rel');
-      if (entity is File) {
-        target.createSync(recursive: true);
-        await entity.copy(target.path);
-      } else if (entity is Directory) {
-        target.createSync(recursive: true);
-      }
-    }
+  // ── Windows: apply on next launch ─────────────────────────────────────────
+  // Checks for a pending-update marker file and applies it.
+
+  Future<void> applyPendingWindowsUpdate() async {
+    try {
+      final dir = await getTemporaryDirectory();
+      final marker = File('${dir.path}/sidimad-pending-update.txt');
+      if (!marker.existsSync()) return;
+      final extractDirPath = marker.readAsStringSync().trim();
+      marker.deleteSync();
+      final extractDir = Directory(extractDirPath);
+      if (!extractDir.existsSync()) return;
+
+      final exePath = Platform.resolvedExecutable;
+      final appDir = p.dirname(exePath);
+      final exeName = p.basename(exePath);
+
+      final batFile = File('${dir.path}/sidimad-restart.bat');
+      final batContent = '''@echo off
+timeout /t 2 /nobreak >nul
+xcopy /Y /E /I /Q "${extractDirPath}\\*" "${appDir}\\"
+start "" "${appDir}\\${exeName}"
+del "%~f0"
+''';
+      await batFile.writeAsString(batContent);
+      await Process.start('cmd', ['/c', batFile.path], mode: ProcessStartMode.detached);
+      exit(0);
+    } catch (_) {}
   }
 
-  /// Download [url] to [file] with progress callback (0..1).
+  // ── Windows: save for later ───────────────────────────────────────────────
+
+  Future<void> savePendingWindowsUpdate(String extractDirPath) async {
+    final dir = await getTemporaryDirectory();
+    final marker = File('${dir.path}/sidimad-pending-update.txt');
+    await marker.writeAsString(extractDirPath);
+  }
+
+  // ── Shared ────────────────────────────────────────────────────────────────
+
   Future<void> _downloadFile(String url, File file, void Function(double)? onProgress) async {
     final client = http.Client();
     try {

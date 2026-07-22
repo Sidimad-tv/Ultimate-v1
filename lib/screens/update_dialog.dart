@@ -4,8 +4,6 @@ import 'package:url_launcher/url_launcher.dart';
 import '../theme.dart';
 import '../updater.dart';
 
-/// Shows the "Update available" dialog and runs the right install path per
-/// platform (Android = APK install, Windows = silent zip replace, others = link).
 Future<void> showUpdateFlow(BuildContext context, UpdateInfo info) async {
   await showDialog<void>(
     context: context,
@@ -23,15 +21,17 @@ class _UpdateDialog extends StatefulWidget {
 class _UpdateDialogState extends State<_UpdateDialog> {
   bool _busy = false;
   double _progress = 0;
-  String? _error;
   String _statusText = '';
+  String? _error;
+  // After Windows download+extract, store the path and show restart prompt
+  String? _pendingExtractPath;
 
-  Future<void> _run() async {
+  Future<void> _download() async {
     final info = widget.info;
     setState(() {
       _busy = true;
       _error = null;
-      _statusText = 'Preparing…';
+      _statusText = 'Downloading…';
     });
     try {
       if (Platform.isAndroid && info.apkUrl != null) {
@@ -43,17 +43,23 @@ class _UpdateDialogState extends State<_UpdateDialog> {
           });
         });
         if (mounted) Navigator.of(context).pop();
+
       } else if (Platform.isWindows && info.windowsZipUrl != null) {
         setState(() => _statusText = 'Downloading update…');
-        await Updater.instance.downloadAndInstallWindows(info, onProgress: (p) {
+        final extractPath = await Updater.instance.prepareWindowsUpdate(info, onProgress: (p) {
           if (mounted) setState(() {
             _progress = p;
-            _statusText = 'Downloading update… ${(p * 100).round()}%';
+            _statusText = 'Downloading… ${(p * 100).round()}%';
           });
         });
-        if (mounted) Navigator.of(context).pop();
+        // Download done — show restart confirmation
+        if (mounted) setState(() {
+          _busy = false;
+          _pendingExtractPath = extractPath;
+          _statusText = 'Update ready!';
+        });
+
       } else {
-        // Fallback: open release page
         setState(() => _statusText = 'Opening download page…');
         await launchUrl(Uri.parse(info.releaseUrl), mode: LaunchMode.externalApplication);
         if (mounted) Navigator.of(context).pop();
@@ -66,31 +72,47 @@ class _UpdateDialogState extends State<_UpdateDialog> {
     }
   }
 
+  void _restartNow() {
+    if (_pendingExtractPath == null) return;
+    Updater.instance.applyWindowsUpdate(_pendingExtractPath!);
+  }
+
+  void _restartLater() {
+    if (_pendingExtractPath == null) return;
+    Updater.instance.savePendingWindowsUpdate(_pendingExtractPath!);
+    Navigator.of(context).pop();
+  }
+
   @override
   Widget build(BuildContext context) {
     final info = widget.info;
     final canInstall = Updater.instance.canSelfInstall &&
         ((Platform.isAndroid && info.apkUrl != null) || (Platform.isWindows && info.windowsZipUrl != null));
+    final showRestartPrompt = _pendingExtractPath != null;
+
     return AlertDialog(
       backgroundColor: surface,
       title: Row(children: [
-        Icon(Icons.system_update_rounded, color: accent),
+        Icon(
+          showRestartPrompt ? Icons.check_circle_rounded : Icons.system_update_rounded,
+          color: showRestartPrompt ? const Color(0xFF66FFAA) : accent,
+        ),
         const SizedBox(width: 10),
-        const Expanded(child: Text('Update available')),
+        Expanded(child: Text(showRestartPrompt ? 'Update ready' : 'Update available')),
       ]),
       content: Column(
         mainAxisSize: MainAxisSize.min,
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Text(info.name, style: const TextStyle(fontWeight: FontWeight.w700)),
-          if (info.notes.isNotEmpty) ...[
+          if (info.notes.isNotEmpty && !showRestartPrompt) ...[
             const SizedBox(height: 8),
             ConstrainedBox(
               constraints: const BoxConstraints(maxHeight: 160),
               child: SingleChildScrollView(child: Text(info.notes, style: TextStyle(color: muted, fontSize: 13, height: 1.4))),
             ),
           ],
-          if (!canInstall) ...[
+          if (!canInstall && !showRestartPrompt) ...[
             const SizedBox(height: 10),
             Text('This opens the release page to download the new build.', style: TextStyle(color: subtle, fontSize: 12)),
           ],
@@ -108,6 +130,13 @@ class _UpdateDialogState extends State<_UpdateDialog> {
             const SizedBox(height: 8),
             Text(_statusText, style: TextStyle(color: subtle, fontSize: 12)),
           ],
+          if (showRestartPrompt) ...[
+            const SizedBox(height: 12),
+            Text(
+              'The update has been downloaded and extracted. Restart now to apply it, or apply it the next time you open the app.',
+              style: TextStyle(color: muted, fontSize: 13, height: 1.4),
+            ),
+          ],
           if (_error != null) ...[
             const SizedBox(height: 12),
             Text(_error!, style: const TextStyle(color: Color(0xFFFFB4B4), fontSize: 13)),
@@ -115,15 +144,27 @@ class _UpdateDialogState extends State<_UpdateDialog> {
         ],
       ),
       actions: [
-        TextButton(
-          onPressed: _busy ? null : () => Navigator.of(context).pop(),
-          child: Text('Later', style: TextStyle(color: muted)),
-        ),
-        FilledButton(
-          style: FilledButton.styleFrom(backgroundColor: accent, foregroundColor: bg),
-          onPressed: _busy ? null : _run,
-          child: Text(canInstall ? 'Update now' : 'Get update'),
-        ),
+        if (showRestartPrompt) ...[
+          TextButton(
+            onPressed: _restartLater,
+            child: Text('Later', style: TextStyle(color: muted)),
+          ),
+          FilledButton(
+            style: FilledButton.styleFrom(backgroundColor: accent, foregroundColor: bg),
+            onPressed: _restartNow,
+            child: const Text('Restart now'),
+          ),
+        ] else ...[
+          TextButton(
+            onPressed: _busy ? null : () => Navigator.of(context).pop(),
+            child: Text('Later', style: TextStyle(color: muted)),
+          ),
+          FilledButton(
+            style: FilledButton.styleFrom(backgroundColor: accent, foregroundColor: bg),
+            onPressed: _busy ? null : _download,
+            child: Text(canInstall ? 'Update now' : 'Get update'),
+          ),
+        ],
       ],
     );
   }

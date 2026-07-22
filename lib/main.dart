@@ -14,6 +14,7 @@ import 'stats.dart';
 import 'store.dart';
 import 'library.dart';
 import 'theme.dart';
+import 'updater.dart';
 import 'widgets.dart';
 import 'xtream.dart';
 import 'screens/login_screen.dart';
@@ -27,6 +28,12 @@ Future<void> main() async {
     await windowManager.ensureInitialized();
   }
   MediaKit.ensureInitialized(); // libmpv — native TS/MKV/HLS playback
+
+  // Windows: apply any pending update from last session before rendering UI.
+  // This exits the process if an update is applied (relaunches via bat script).
+  if (!kIsWeb && Platform.isWindows) {
+    await Updater.instance.applyPendingWindowsUpdate();
+  }
 
   // Never show a blank/white error screen — paint errors on the dark canvas.
   ErrorWidget.builder = (details) => Container(
