@@ -16,7 +16,7 @@ val keystoreProperties = Properties()
 if (hasKeystore) keystoreProperties.load(FileInputStream(keystorePropertiesFile))
 
 android {
-    namespace = "com.lumen.lumen_tv"
+    namespace = "com.sidimad.xtreamprov1"
     compileSdk = flutter.compileSdkVersion
     ndkVersion = flutter.ndkVersion
 
@@ -31,7 +31,7 @@ android {
 
     defaultConfig {
         // TODO: Specify your own unique Application ID (https://developer.android.com/studio/build/application-id.html).
-        applicationId = "com.lumen.lumen_tv"
+        applicationId = "com.sidimad.xtreamprov1"
         // You can update the following values to match your application needs.
         // For more information, see: https://flutter.dev/to/review-gradle-config.
         minSdk = flutter.minSdkVersion

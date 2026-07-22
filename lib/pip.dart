@@ -11,7 +11,7 @@ class Pip {
   Pip._();
   static final Pip instance = Pip._();
 
-  static const _ch = MethodChannel('lumen/pip');
+  static const _ch = MethodChannel('sidimad/pip');
 
   /// True while the OS is showing the app in a PiP window.
   final ValueNotifier<bool> active = ValueNotifier<bool>(false);

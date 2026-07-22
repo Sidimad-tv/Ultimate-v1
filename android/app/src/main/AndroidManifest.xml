@@ -11,7 +11,7 @@
     <uses-feature android:name="android.software.picture_in_picture" android:required="false"/>
 
     <application
-        android:label="Lumen"
+        android:label="Sidimad-XtreamProv1"
         android:name="${applicationName}"
         android:icon="@mipmap/ic_launcher"
         android:banner="@drawable/tv_banner"

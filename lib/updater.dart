@@ -74,7 +74,7 @@ class Updater {
   Future<void> downloadAndInstall(UpdateInfo info, {void Function(double)? onProgress}) async {
     if (info.apkUrl == null) throw Exception('No Android build available.');
     final dir = await getTemporaryDirectory();
-    final file = File('${dir.path}/lumen-update-${info.build}.apk');
+    final file = File('${dir.path}/sidimad-update-${info.build}.apk');
     final client = http.Client();
     try {
       final resp = await client.send(http.Request('GET', Uri.parse(info.apkUrl!)));
